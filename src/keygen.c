@@ -1,16 +1,20 @@
 #include "common.h"
+#include "argz.h"
 
 #include <sodium.h>
-#include <stdio.h>
 
 int
-gt_keygen(int argc, char **argv)
+gt_keygen(int argc, char **argv, void *data)
 {
+    int err = argz(argc, argv, NULL);
+
+    if (err)
+        return err;
+
     if (sodium_init() == -1) {
         gt_log("sodium init failed\n");
-        return 1;
+        return -1;
     }
-
     unsigned char key[32];
     randombytes_buf(key, sizeof(key));
 

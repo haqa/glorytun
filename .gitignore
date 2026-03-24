@@ -1,5 +1,7 @@
 *.[ios]
 *.log
+*.err
+*.key
 *.scan
 *.cache
 *.status
@@ -10,7 +12,7 @@ configure
 build-aux
 .deps
 .dirstamp
-.static
+.sodium
 glorytun
 build*
 VERSION

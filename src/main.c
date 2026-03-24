@@ -1,10 +1,5 @@
 #include "common.h"
-#include "str.h"
-
-#include <sodium.h>
-#include <stdio.h>
-
-#include "../argz/argz.h"
+#include "argz.h"
 
 volatile sig_atomic_t gt_alarm;
 volatile sig_atomic_t gt_reload;
@@ -27,17 +22,13 @@ gt_sa_handler(int sig)
 static void
 gt_set_signal(void)
 {
-    struct sigaction sa = {
-        .sa_flags = 0,
-    };
-
-    sigemptyset(&sa.sa_mask);
+    struct sigaction sa = {0};
 
     sa.sa_handler = gt_sa_handler;
-    sigaction(SIGINT, &sa, NULL);
+    sigaction(SIGINT,  &sa, NULL);
     sigaction(SIGQUIT, &sa, NULL);
     sigaction(SIGTERM, &sa, NULL);
-    sigaction(SIGHUP, &sa, NULL);
+    sigaction(SIGHUP,  &sa, NULL);
     sigaction(SIGALRM, &sa, NULL);
 
     sa.sa_handler = SIG_IGN;
@@ -46,62 +37,34 @@ gt_set_signal(void)
     sigaction(SIGUSR2, &sa, NULL);
 }
 
-static int
-gt_version(int argc, char **argv)
-{
-    struct argz version_argz[] = {
-        {"libsodium", NULL, NULL, argz_option},
-        {NULL}};
-
-    if (argz(version_argz, argc, argv))
-        return 1;
-
-    if (argz_is_set(version_argz, "libsodium")) {
-        printf("%s\n", sodium_version_string());
-    } else {
-        printf("%s\n", PACKAGE_VERSION);
-    }
-
-    return 0;
-}
+int gt_list    (int, char **, void *);
+int gt_show    (int, char **, void *);
+int gt_bench   (int, char **, void *);
+int gt_bind    (int, char **, void *);
+int gt_set     (int, char **, void *);
+int gt_keygen  (int, char **, void *);
+int gt_path    (int, char **, void *);
+int gt_version (int, char **, void *);
 
 int
 main(int argc, char **argv)
 {
     gt_set_signal();
 
-    struct {
-        char *name;
-        char *help;
-        int (*call)(int, char **);
-    } cmd[] = {
-        {"show", "show tunnel info", gt_show},
-        {"bench", "start a crypto bench", gt_bench},
-        {"bind", "start a new tunnel", gt_bind},
-        {"set", "change tunnel properties", gt_set},
-        {"keygen", "generate a new secret key", gt_keygen},
-        {"path", "manage paths", gt_path},
-        {"version", "show version", gt_version},
-        {NULL}};
+    struct argz z[] = {
+        {"list",    "List all tunnels",          gt_list,    .grp = 1},
+        {"show",    "Show tunnel information",   gt_show,    .grp = 1},
+        {"bench",   "Start a crypto bench",      gt_bench,   .grp = 1},
+        {"bind",    "Start a new tunnel",        gt_bind,    .grp = 1},
+        {"set",     "Change tunnel properties",  gt_set,     .grp = 1},
+        {"keygen",  "Generate a new secret key", gt_keygen,  .grp = 1},
+        {"path",    "Manage paths",              gt_path,    .grp = 1},
+        {"version", "Show version",              gt_version, .grp = 1},
+        {0}};
 
-    if (argv[1]) {
-        for (int k = 0; cmd[k].name; k++) {
-            if (!str_cmp(cmd[k].name, argv[1]))
-                return cmd[k].call(argc - 1, argv + 1);
-        }
+    if (argc == 1) {
+        argz_print(z);
+        return 0;
     }
-
-    printf("available commands:\n\n");
-
-    int len = 0;
-
-    for (int k = 0; cmd[k].name; k++)
-        len = MAX(len, (int)str_len(cmd[k].name, 32));
-
-    for (int k = 0; cmd[k].name; k++)
-        printf("  %-*s  %s\n", len, cmd[k].name, cmd[k].help);
-
-    printf("\n");
-
-    return 1;
+    return argz_main(argc, argv, z);
 }
