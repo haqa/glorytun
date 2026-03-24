@@ -1,0 +1,38 @@
+# Glorytun server - systemd template unit
+# Install to: /etc/systemd/system/glorytun-server@.service
+#
+# Usage:
+#   systemctl enable --now glorytun-server@tun0
+#   systemctl enable --now glorytun-server@tun1
+#
+# The instance name (%i) must match a tunnel name defined in
+# /etc/default/glorytun-server
+
+[Unit]
+Description=Glorytun tunnel server (%i)
+After=network-online.target
+Wants=network-online.target
+Documentation=man:glorytun
+
+[Service]
+Type=simple
+ExecStart=/usr/local/lib/glorytun/glorytun-server-start %i
+Restart=on-failure
+RestartSec=5
+
+# Force control socket to /run/glorytun.0 (glorytun prefers /run/user/0 when it exists;
+# hiding /run/user makes both service and interactive root use the same path)
+InaccessiblePaths=/run/user
+
+# Hardening
+ProtectSystem=strict
+ProtectHome=yes
+ReadOnlyPaths=/
+ReadWritePaths=/dev/net/tun /run
+PrivateTmp=yes
+NoNewPrivileges=no
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target

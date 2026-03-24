@@ -1,0 +1,139 @@
+#!/sbin/openrc-run
+# glorytun-server - OpenRC init script for Glorytun server tunnels
+# Install to: /etc/init.d/glorytun-server
+# Config:     /etc/conf.d/glorytun-server
+
+description="Glorytun encrypted UDP tunnel server"
+
+GLORYTUN_BIN="${GLORYTUN_BIN:-/usr/local/bin/glorytun}"
+GLORYTUN_OPTS="${GLORYTUN_OPTS:-persist}"
+PIDDIR="/run/glorytun"
+
+depend() {
+    need net
+    after firewall
+}
+
+get_iface_ip() {
+    local iface="$1"
+    ip -4 -o addr show dev "$iface" 2>/dev/null \
+        | awk '{print $4}' | cut -d/ -f1 | head -n1
+}
+
+wait_for_dev() {
+    local dev="$1" tries=0
+    while [ $tries -lt 50 ]; do
+        ip link show "$dev" >/dev/null 2>&1 && return 0
+        tries=$((tries + 1))
+        sleep 0.1
+    done
+    return 1
+}
+
+parse_tunnel() {
+    local spec="$1"
+    TUN_NAME="${spec%%:*}"
+    local rest="${spec#*:}"
+    TUN_PORT="${rest%%:*}"
+    rest="${rest#*:}"
+    TUN_IFACE="${rest%%:*}"
+    rest="${rest#*:}"
+    case "$rest" in
+        *:*) TUN_KEYFILE="${rest%:*}" ; TUN_LOCAL_IP="${rest##*:}" ;;
+        *)   TUN_KEYFILE="$rest" ; TUN_LOCAL_IP="" ;;
+    esac
+}
+
+start_tunnel() {
+    local spec="$1"
+    parse_tunnel "$spec"
+
+    if [ ! -f "$TUN_KEYFILE" ]; then
+        eerror "Key file $TUN_KEYFILE not found for tunnel $TUN_NAME"
+        return 1
+    fi
+
+    local bind_ip
+    bind_ip=$(get_iface_ip "$TUN_IFACE")
+
+    if [ -z "$bind_ip" ]; then
+        eerror "No IPv4 address on interface $TUN_IFACE for tunnel $TUN_NAME"
+        return 1
+    fi
+
+    ebegin "Starting tunnel $TUN_NAME on $bind_ip:$TUN_PORT ($TUN_IFACE)"
+    start-stop-daemon --start --background \
+        --make-pidfile --pidfile "$PIDDIR/$TUN_NAME.pid" \
+        --exec "$GLORYTUN_BIN" -- \
+        bind "$bind_ip" "$TUN_PORT" dev "$TUN_NAME" \
+        keyfile "$TUN_KEYFILE" $GLORYTUN_OPTS
+    eend $? || return 1
+
+    # Wait for the TUN device to appear
+    ebegin "Waiting for ${TUN_NAME}"
+    wait_for_dev "$TUN_NAME"
+    eend $? || { eerror "${TUN_NAME} did not appear"; return 1; }
+
+    # Configure tunnel addressing (glorytun creates the device but does not set IP or link state)
+    if [ -n "$TUN_LOCAL_IP" ]; then
+        ebegin "Configuring ${TUN_NAME} with ${TUN_LOCAL_IP}"
+        ip addr add "$TUN_LOCAL_IP" dev "$TUN_NAME" 2>/dev/null || true
+        eend $?
+    fi
+    # Bring the interface up — required for the tunnel to accept traffic from clients
+    ebegin "Bringing ${TUN_NAME} up"
+    ip link set "$TUN_NAME" up
+    eend $?
+}
+
+stop_tunnel() {
+    local spec="$1"
+    parse_tunnel "$spec"
+
+    ebegin "Stopping tunnel $TUN_NAME"
+    start-stop-daemon --stop --pidfile "$PIDDIR/$TUN_NAME.pid"
+    eend $?
+}
+
+status_tunnel() {
+    local spec="$1"
+    parse_tunnel "$spec"
+
+    if [ -f "$PIDDIR/$TUN_NAME.pid" ] && kill -0 "$(cat "$PIDDIR/$TUN_NAME.pid")" 2>/dev/null; then
+        einfo "Tunnel $TUN_NAME is running (pid $(cat "$PIDDIR/$TUN_NAME.pid"))"
+    else
+        ewarn "Tunnel $TUN_NAME is not running"
+        return 1
+    fi
+}
+
+start() {
+    if [ -z "$TUNNELS" ]; then
+        eerror "No tunnels configured in /etc/conf.d/glorytun-server"
+        return 1
+    fi
+
+    checkpath --directory --mode 0755 "$PIDDIR"
+
+    local ret=0
+    for spec in $TUNNELS; do
+        start_tunnel "$spec" || ret=1
+    done
+    return $ret
+}
+
+stop() {
+    local ret=0
+    for spec in $TUNNELS; do
+        stop_tunnel "$spec" || ret=1
+    done
+    return $ret
+}
+
+status() {
+    local ret=0
+    for spec in $TUNNELS; do
+        status_tunnel "$spec" || ret=1
+    done
+    return $ret
+}

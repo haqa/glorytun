@@ -1,0 +1,72 @@
+# Configuration for glorytun-client
+# Install to: /etc/default/glorytun-client
+#
+# Defines a single multipath tunnel from this machine (client) to a remote
+# server, using one or more local network interfaces as separate paths.
+
+# ── Tunnel ────────────────────────────────────────────────────────────────
+
+# TUN device name
+TUN_DEV="tun0"
+
+# Remote server address and port
+SERVER_ADDR="203.0.113.1"
+SERVER_PORT="5000"
+
+# Key file for this tunnel
+KEYFILE="/etc/glorytun/key"
+
+# Tunnel IP addressing — applied to TUN_DEV after it is created.
+# Use CIDR notation. Leave empty to skip (if managed elsewhere).
+TUN_LOCAL_IP="10.99.0.2/30"
+
+# ── Interfaces / paths ───────────────────────────────────────────────────
+#
+# Space-separated list of INTERFACE:GATEWAY pairs.
+# Each interface becomes a separate path through the tunnel.
+# The gateway is used for source-based policy routing so that packets
+# with that interface's source IP leave via the correct physical link.
+#
+# Example:
+#   INTERFACES="eth1:192.168.1.254 eth2:192.168.12.252 eth3:192.168.11.5"
+
+INTERFACES="eth1:192.168.1.254 eth2:10.0.0.1 eth3:172.16.0.1 eth4:10.1.0.1"
+
+# ── Path settings ────────────────────────────────────────────────────────
+
+# Rate mode: "fixed" or "auto"
+RATE_MODE="fixed"
+
+# Transmit / receive limits per path (bytes/sec with optional suffix).
+# Commenting these out does not remove limits — the start script substitutes
+# defaults. In auto mode they are ceilings, not fixed throughput; unset uses
+# a large default cap (see RATE_AUTO_*_MAX in glorytun-client-start).
+RATE_TX="12500k"
+RATE_RX="12500k"
+
+# RATE_AUTO_TX_MAX="12500000k"
+# RATE_AUTO_RX_MAX="12500000k"
+
+# Keepalive beat interval (time suffix: s, ms, etc.)
+BEAT="500ms"
+
+# Packet loss percentage at which a path is considered degraded
+LOSSLIMIT="30%"
+
+# Initial path state: "up" or "backup"
+PATH_STATE="up"
+
+# ── Routing ──────────────────────────────────────────────────────────────
+
+# Starting routing table number for source-based policy routes.
+RT_TABLE_START=101
+
+# Reverse path filter mode (0=off, 1=strict, 2=loose — 2 recommended)
+RP_FILTER=2
+
+# ── Glorytun binary ──────────────────────────────────────────────────────
+
+GLORYTUN_BIN="/usr/local/bin/glorytun"
+
+# Extra options passed to glorytun bind (e.g. "chacha persist")
+GLORYTUN_OPTS="persist"

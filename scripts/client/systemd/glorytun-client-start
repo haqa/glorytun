@@ -1,0 +1,134 @@
+#!/bin/sh
+# Helper script for glorytun-client systemd service.
+# Starts the tunnel, configures addressing, sets up source-based policy
+# routing for each interface, and registers paths.
+#
+# Install to: /usr/local/lib/glorytun/glorytun-client-start
+# Called by:  glorytun-client.service
+
+set -e
+
+CONFIG="/etc/default/glorytun-client"
+
+if [ ! -f "$CONFIG" ]; then
+    echo "Config file $CONFIG not found" >&2
+    exit 1
+fi
+
+. "$CONFIG"
+
+GLORYTUN_BIN="${GLORYTUN_BIN:-/usr/local/bin/glorytun}"
+GLORYTUN_OPTS="${GLORYTUN_OPTS:-persist}"
+TUN_DEV="${TUN_DEV:-tun0}"
+
+# Make sure the control socket is where we can find it.
+ln -s /run/glorytun.0 /run/user/0/glorytun > /dev/null 2>&1 || true
+
+# ── Validation ────────────────────────────────────────────────────────────
+
+if [ -z "$INTERFACES" ]; then
+    echo "INTERFACES not set in $CONFIG" >&2
+    exit 1
+fi
+
+if [ -z "$SERVER_ADDR" ] || [ -z "$SERVER_PORT" ]; then
+    echo "SERVER_ADDR and SERVER_PORT must be set in $CONFIG" >&2
+    exit 1
+fi
+
+if [ ! -f "$KEYFILE" ]; then
+    echo "Key file $KEYFILE not found" >&2
+    exit 1
+fi
+
+# ── Helpers ───────────────────────────────────────────────────────────────
+
+get_iface_ip() {
+    ip -4 -o addr show dev "$1" 2>/dev/null \
+        | awk '{print $4}' | cut -d/ -f1 | head -n1
+}
+
+wait_for_dev() {
+    local dev="$1" tries=0
+    while [ $tries -lt 50 ]; do
+        ip link show "$dev" >/dev/null 2>&1 && return 0
+        tries=$((tries + 1))
+        sleep 0.1
+    done
+    return 1
+}
+
+# ── Start tunnel in background ────────────────────────────────────────────
+
+"$GLORYTUN_BIN" bind to "$SERVER_ADDR" "$SERVER_PORT" \
+    dev "$TUN_DEV" keyfile "$KEYFILE" $GLORYTUN_OPTS &
+GT_PID=$!
+
+echo "Tunnel PID: $GT_PID"
+
+# Wait for the TUN device
+if ! wait_for_dev "$TUN_DEV"; then
+    echo "${TUN_DEV} did not appear — killing glorytun" >&2
+    kill "$GT_PID" 2>/dev/null
+    exit 1
+fi
+
+# ── Configure tunnel addressing ──────────────────────────────────────────
+
+if [ -n "$TUN_LOCAL_IP" ]; then
+    ip addr add "$TUN_LOCAL_IP" dev "$TUN_DEV" 2>/dev/null || true
+    ip link set "$TUN_DEV" up
+fi
+
+# ── Reverse path filtering ───────────────────────────────────────────────
+
+RP_FILTER="${RP_FILTER:-2}"
+sysctl -qw net.ipv4.conf.all.rp_filter="$RP_FILTER"
+sysctl -qw net.ipv4.conf.default.rp_filter="$RP_FILTER"
+
+# ── Per-interface setup ───────────────────────────────────────────────────
+
+table="${RT_TABLE_START:-101}"
+
+rate_mode="${RATE_MODE:-fixed}"
+if [ "$rate_mode" = "auto" ]; then
+    rate_tx="${RATE_TX:-${RATE_AUTO_TX_MAX:-12500000k}}"
+    rate_rx="${RATE_RX:-${RATE_AUTO_RX_MAX:-12500000k}}"
+else
+    rate_tx="${RATE_TX:-12500k}"
+    rate_rx="${RATE_RX:-12500k}"
+fi
+
+for spec in $INTERFACES; do
+    iface="${spec%%:*}"
+    gateway="${spec#*:}"
+
+    src_ip=$(get_iface_ip "$iface")
+    if [ -z "$src_ip" ]; then
+        echo "Warning: no IPv4 address on $iface — skipping" >&2
+        table=$((table + 1))
+        continue
+    fi
+
+    # Source-based policy route
+    ip route replace default via "$gateway" dev "$iface" table "$table" 2>/dev/null
+    ip rule add from "$src_ip" table "$table" 2>/dev/null || true
+    echo "Policy route: ${src_ip} via ${gateway} dev ${iface} table ${table}"
+
+    # Register path — rate_tx/rate_rx computed once before the loop; see
+    # scripts/client/openrc/glorytun-client register_path() for semantics.
+    "$GLORYTUN_BIN" path "$src_ip" dev "$TUN_DEV" \
+        "${PATH_STATE:-up}" \
+        beat "${BEAT:-5s}" \
+        losslimit "${LOSSLIMIT:-30%}" \
+        rate "$rate_mode" tx "$rate_tx" rx "$rate_rx"
+    echo "Path registered: ${src_ip} on ${TUN_DEV}"
+
+    table=$((table + 1))
+done
+
+# ── Wait for tunnel process ──────────────────────────────────────────────
+# The service type is "forking" via the wrapper, or we can just wait here
+# and let systemd manage the main PID.
+
+wait "$GT_PID"

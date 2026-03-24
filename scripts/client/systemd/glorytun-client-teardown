@@ -1,0 +1,37 @@
+#!/bin/sh
+# Teardown script for glorytun-client systemd service.
+# Removes source-based policy routes and brings paths down.
+#
+# Install to: /usr/local/lib/glorytun/glorytun-client-teardown
+# Called by:  glorytun-client.service ExecStopPost
+
+CONFIG="/etc/default/glorytun-client"
+
+if [ ! -f "$CONFIG" ]; then
+    exit 0
+fi
+
+. "$CONFIG"
+
+GLORYTUN_BIN="${GLORYTUN_BIN:-/usr/local/bin/glorytun}"
+TUN_DEV="${TUN_DEV:-tun0}"
+
+get_iface_ip() {
+    ip -4 -o addr show dev "$1" 2>/dev/null \
+        | awk '{print $4}' | cut -d/ -f1 | head -n1
+}
+
+table="${RT_TABLE_START:-101}"
+
+for spec in $INTERFACES; do
+    iface="${spec%%:*}"
+    src_ip=$(get_iface_ip "$iface")
+
+    if [ -n "$src_ip" ]; then
+        "$GLORYTUN_BIN" path "$src_ip" dev "$TUN_DEV" down 2>/dev/null || true
+        ip rule del from "$src_ip" table "$table" 2>/dev/null || true
+        ip route flush table "$table" 2>/dev/null || true
+    fi
+
+    table=$((table + 1))
+done

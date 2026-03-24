@@ -1,0 +1,26 @@
+# Configuration for glorytun-server
+# Install to: /etc/default/glorytun-server
+#
+# Each tunnel is defined as TUN_NAME:PORT:INTERFACE:KEYFILE[:TUN_LOCAL_IP]
+# The server binds to the IP address of INTERFACE on the given PORT,
+# creates the TUN_NAME device, and uses KEYFILE for authentication.
+# Optional TUN_LOCAL_IP (CIDR) is assigned to the tunnel and the interface
+# is brought up. Without it, you must configure the TUN interface elsewhere.
+#
+# Examples:
+#   Single tunnel with IP:
+#     TUNNELS="tun0:5000:eth0:/etc/glorytun/key:10.99.0.1/30"
+#
+#   Single tunnel (configure TUN elsewhere):
+#     TUNNELS="tun0:5000:eth0:/etc/glorytun/key"
+#
+#   Multiple tunnels with separate keys:
+#     TUNNELS="tun0:5000:eth0:/etc/glorytun/tun0.key:10.99.0.1/30 tun1:5001:eth0:/etc/glorytun/tun1.key:10.99.1.1/30"
+
+TUNNELS="tun0:5000:eth0:/etc/glorytun/key:10.99.0.1/30"
+
+# Path to the glorytun binary
+GLORYTUN_BIN="/usr/local/bin/glorytun"
+
+# Extra options passed to glorytun bind (e.g. "chacha" to force fallback cipher)
+GLORYTUN_OPTS="persist"

@@ -1,0 +1,100 @@
+#!/bin/sh
+# Helper script for glorytun-server systemd template unit.
+# Parses the shared config file, resolves the interface IP for the
+# requested tunnel, starts glorytun, waits for the TUN device, configures
+# addressing if TUN_LOCAL_IP is set, and runs until glorytun exits.
+#
+# Install to: /usr/local/lib/glorytun/glorytun-server-start
+# Called by:  glorytun-server@.service with the tunnel name as $1
+
+set -e
+
+TUNNEL_NAME="$1"
+
+if [ -z "$TUNNEL_NAME" ]; then
+    echo "usage: glorytun-server-start <tunnel-name>" >&2
+    exit 1
+fi
+
+CONFIG="/etc/default/glorytun-server"
+
+if [ ! -f "$CONFIG" ]; then
+    echo "Config file $CONFIG not found" >&2
+    exit 1
+fi
+
+. "$CONFIG"
+
+GLORYTUN_BIN="${GLORYTUN_BIN:-/usr/local/bin/glorytun}"
+GLORYTUN_OPTS="${GLORYTUN_OPTS:-persist}"
+
+FOUND=""
+tun_local_ip=""
+for spec in $TUNNELS; do
+    tun="${spec%%:*}"
+    rest="${spec#*:}"
+    port="${rest%%:*}"
+    rest="${rest#*:}"
+    iface="${rest%%:*}"
+    rest="${rest#*:}"
+    case "$rest" in
+        *:*) keyfile="${rest%:*}" ; tun_local_ip="${rest##*:}" ;;
+        *)   keyfile="$rest" ; tun_local_ip="" ;;
+    esac
+
+    if [ "$tun" = "$TUNNEL_NAME" ]; then
+        FOUND=1
+        break
+    fi
+    tun_local_ip=""
+done
+
+if [ -z "$FOUND" ]; then
+    echo "Tunnel $TUNNEL_NAME not found in TUNNELS in $CONFIG" >&2
+    exit 1
+fi
+
+if [ ! -f "$keyfile" ]; then
+    echo "Key file $keyfile not found for tunnel $TUNNEL_NAME" >&2
+    exit 1
+fi
+
+bind_ip=$(ip -4 -o addr show dev "$iface" 2>/dev/null \
+    | awk '{print $4}' | cut -d/ -f1 | head -n1)
+
+if [ -z "$bind_ip" ]; then
+    echo "No IPv4 address on interface $iface for tunnel $TUNNEL_NAME" >&2
+    exit 1
+fi
+
+wait_for_dev() {
+    local dev="$1" tries=0
+    while [ $tries -lt 50 ]; do
+        ip link show "$dev" >/dev/null 2>&1 && return 0
+        tries=$((tries + 1))
+        sleep 0.1
+    done
+    return 1
+}
+
+# Start glorytun in background
+"$GLORYTUN_BIN" bind "$bind_ip" "$port" dev "$TUNNEL_NAME" \
+    keyfile "$keyfile" $GLORYTUN_OPTS &
+GT_PID=$!
+
+# Wait for the TUN device to appear
+if ! wait_for_dev "$TUNNEL_NAME"; then
+    echo "${TUNNEL_NAME} did not appear — killing glorytun" >&2
+    kill "$GT_PID" 2>/dev/null
+    exit 1
+fi
+
+# Configure tunnel addressing (glorytun creates the device but does not set IP or link state)
+if [ -n "$tun_local_ip" ]; then
+    ip addr add "$tun_local_ip" dev "$TUNNEL_NAME" 2>/dev/null || true
+fi
+# Bring the interface up — required for the tunnel to accept traffic from clients
+ip link set "$TUNNEL_NAME" up
+
+# Wait for glorytun to exit (service stays running until then)
+wait "$GT_PID"

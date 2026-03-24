@@ -1,0 +1,30 @@
+# Glorytun client - systemd service unit
+# Install to: /etc/systemd/system/glorytun-client.service
+#
+# Usage:
+#   systemctl enable --now glorytun-client
+
+[Unit]
+Description=Glorytun multipath tunnel client
+After=network-online.target
+Wants=network-online.target
+Documentation=man:glorytun
+
+[Service]
+Type=simple
+ExecStart=/usr/local/lib/glorytun/glorytun-client-start
+ExecStopPost=/usr/local/lib/glorytun/glorytun-client-teardown
+Restart=on-failure
+RestartSec=5
+
+ProtectSystem=strict
+ProtectHome=yes
+ReadOnlyPaths=/
+ReadWritePaths=/dev/net/tun /run
+PrivateTmp=yes
+NoNewPrivileges=no
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target

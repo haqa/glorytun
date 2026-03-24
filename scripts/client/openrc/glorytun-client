@@ -1,0 +1,190 @@
+#!/sbin/openrc-run
+# glorytun-client - OpenRC init script for Glorytun multipath client
+# Install to: /etc/init.d/glorytun-client
+# Config:     /etc/conf.d/glorytun-client
+
+description="Glorytun encrypted UDP tunnel client"
+
+GLORYTUN_BIN="${GLORYTUN_BIN:-/usr/local/bin/glorytun}"
+GLORYTUN_OPTS="${GLORYTUN_OPTS:-persist}"
+PIDDIR="/run/glorytun"
+
+depend() {
+    need net
+    after firewall
+}
+
+get_iface_ip() {
+    ip -4 -o addr show dev "$1" 2>/dev/null \
+        | awk '{print $4}' | cut -d/ -f1 | head -n1
+}
+
+wait_for_dev() {
+    local dev="$1" tries=0
+    while [ $tries -lt 50 ]; do
+        ip link show "$dev" >/dev/null 2>&1 && return 0
+        tries=$((tries + 1))
+        sleep 0.1
+    done
+    return 1
+}
+
+setup_policy_route() {
+    local iface="$1" gateway="$2" table="$3" src_ip="$4"
+
+    ip route replace default via "$gateway" dev "$iface" table "$table" 2>/dev/null
+    ip rule add from "$src_ip" table "$table" 2>/dev/null
+}
+
+teardown_policy_route() {
+    local table="$1" src_ip="$2"
+
+    ip rule del from "$src_ip" table "$table" 2>/dev/null
+    ip route flush table "$table" 2>/dev/null
+}
+
+register_path() {
+    local src_ip="$1" mode eff_tx eff_rx
+
+    # ${VAR:-word} applies when VAR is unset *or empty*, so commenting
+    # RATE_TX/RATE_RX in the config still hits the defaults here — you are
+    # never "disabling" the rate arguments from the CLI.
+    #
+    # In auto mode, tx/rx are ceilings (see mud_update_window); the old
+    # single default (~100 Mbit) made mobile links look "stuck". When RATE_TX
+    # / RATE_RX are unset, use a large cap (override with RATE_AUTO_*_MAX).
+    mode="${RATE_MODE:-fixed}"
+    if [ "$mode" = "auto" ]; then
+        eff_tx="${RATE_TX:-${RATE_AUTO_TX_MAX:-12500000k}}"
+        eff_rx="${RATE_RX:-${RATE_AUTO_RX_MAX:-12500000k}}"
+    else
+        eff_tx="${RATE_TX:-12500k}"
+        eff_rx="${RATE_RX:-12500k}"
+    fi
+
+    "$GLORYTUN_BIN" path "$src_ip" dev "$TUN_DEV" \
+        "${PATH_STATE:-up}" \
+        beat "${BEAT:-5s}" \
+        losslimit "${LOSSLIMIT:-30%}" \
+        rate "$mode" tx "$eff_tx" rx "$eff_rx"
+}
+
+deregister_path() {
+    local src_ip="$1"
+    "$GLORYTUN_BIN" path "$src_ip" dev "$TUN_DEV" down 2>/dev/null
+}
+
+start() {
+    if [ -z "$INTERFACES" ]; then
+        eerror "No interfaces configured in /etc/conf.d/glorytun-client"
+        return 1
+    fi
+
+    if [ -z "$SERVER_ADDR" ] || [ -z "$SERVER_PORT" ]; then
+        eerror "SERVER_ADDR and SERVER_PORT must be set in /etc/conf.d/glorytun-client"
+        return 1
+    fi
+
+    if [ ! -f "$KEYFILE" ]; then
+        eerror "Key file $KEYFILE not found"
+        return 1
+    fi
+
+    checkpath --directory --mode 0755 "$PIDDIR"
+
+    # Start the tunnel process
+    ebegin "Starting tunnel ${TUN_DEV} to ${SERVER_ADDR}:${SERVER_PORT}"
+    start-stop-daemon --start --background \
+        --make-pidfile --pidfile "$PIDDIR/${TUN_DEV}.pid" \
+        --exec "$GLORYTUN_BIN" \
+        bind to "$SERVER_ADDR" "$SERVER_PORT" dev "$TUN_DEV" \
+        keyfile "$KEYFILE" $GLORYTUN_OPTS
+    eend $? || return 1
+
+    # Wait for the TUN device to appear
+    ebegin "Waiting for ${TUN_DEV}"
+    wait_for_dev "$TUN_DEV"
+    eend $? || { eerror "${TUN_DEV} did not appear"; return 1; }
+
+    # Configure tunnel addressing
+    if [ -n "$TUN_LOCAL_IP" ]; then
+        ebegin "Configuring ${TUN_DEV} with ${TUN_LOCAL_IP}"
+        ip addr add "$TUN_LOCAL_IP" dev "$TUN_DEV" 2>/dev/null
+        ip link set "$TUN_DEV" up
+        eend $?
+    fi
+
+    # Set loose reverse path filtering
+    if [ -n "$RP_FILTER" ]; then
+        sysctl -qw net.ipv4.conf.all.rp_filter="$RP_FILTER"
+        sysctl -qw net.ipv4.conf.default.rp_filter="$RP_FILTER"
+    fi
+
+    # Configure each interface: policy routing + path registration
+    local table="${RT_TABLE_START:-101}"
+    local ret=0
+
+    for spec in $INTERFACES; do
+        local iface="${spec%%:*}"
+        local gateway="${spec#*:}"
+        local src_ip
+
+        src_ip=$(get_iface_ip "$iface")
+        if [ -z "$src_ip" ]; then
+            ewarn "No IPv4 address on $iface — skipping"
+            table=$((table + 1))
+            continue
+        fi
+
+        ebegin "Policy route: ${src_ip} via ${gateway} dev ${iface} (table ${table})"
+        setup_policy_route "$iface" "$gateway" "$table" "$src_ip"
+        eend $?
+
+        ebegin "Registering path ${src_ip} on ${TUN_DEV}"
+        register_path "$src_ip"
+        eend $? || ret=1
+
+        table=$((table + 1))
+    done
+
+    return $ret
+}
+
+stop() {
+    local table="${RT_TABLE_START:-101}"
+
+    # Tear down paths and policy routes
+    for spec in $INTERFACES; do
+        local iface="${spec%%:*}"
+        local src_ip
+
+        src_ip=$(get_iface_ip "$iface")
+        if [ -n "$src_ip" ]; then
+            ebegin "Removing path ${src_ip}"
+            deregister_path "$src_ip"
+            eend $?
+
+            ebegin "Removing policy route for ${src_ip} (table ${table})"
+            teardown_policy_route "$table" "$src_ip"
+            eend $?
+        fi
+
+        table=$((table + 1))
+    done
+
+    # Stop the tunnel process
+    ebegin "Stopping tunnel ${TUN_DEV}"
+    start-stop-daemon --stop --pidfile "$PIDDIR/${TUN_DEV}.pid"
+    eend $?
+}
+
+status() {
+    if [ -f "$PIDDIR/${TUN_DEV}.pid" ] && kill -0 "$(cat "$PIDDIR/${TUN_DEV}.pid")" 2>/dev/null; then
+        einfo "Tunnel ${TUN_DEV} is running (pid $(cat "$PIDDIR/${TUN_DEV}.pid"))"
+        "$GLORYTUN_BIN" show dev "$TUN_DEV" 2>/dev/null
+        "$GLORYTUN_BIN" path dev "$TUN_DEV" 2>/dev/null
+    else
+        ewarn "Tunnel ${TUN_DEV} is not running"
+        return 1
+    fi
+}
