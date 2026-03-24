@@ -1,9 +1,9 @@
 # Glorytun Command-Line Reference
 
 Glorytun uses the [argz](https://github.com/angt/argz) library for declarative,
-table-driven command-line parsing. Arguments are positional keywords (not prefixed
-with `--`). The special keyword `help` can be appended after any command or
-subcommand to display its usage line.
+table-driven command-line parsing. Arguments are keyword-based (not prefixed with
+`--`). The special keyword `help` can be appended after any command or nested
+context to display its usage line.
 
 ```
 glorytun <command> [options...]
@@ -15,13 +15,14 @@ Running `glorytun` with no arguments (or an unknown command) prints this list.
 
 | Command   | Description                    |
 |-----------|--------------------------------|
-| `show`    | Show tunnel info               |
-| `bench`   | Start a crypto bench           |
+| `list`    | List tunnel control socket paths |
+| `show`    | Show tunnel info or errors     |
+| `bench`   | Run a crypto benchmark         |
 | `bind`    | Start a new tunnel             |
-| `set`     | Change tunnel properties       |
+| `set`     | Change tunnel timing options   |
 | `keygen`  | Generate a new secret key      |
-| `path`    | Manage paths                   |
-| `version` | Show version                   |
+| `path`    | Show or configure paths        |
+| `version` | Show version and libsodium     |
 
 ---
 
@@ -31,51 +32,54 @@ Start a new tunnel. Creates a tunnel device, establishes the encrypted UDP
 transport, and enters the main packet-forwarding loop.
 
 ```
-glorytun bind [IPADDR] [PORT] [to [IPADDR] [PORT]] [dev NAME]
-              keyfile FILE [chacha] [persist]
+glorytun bind keyfile FILE [dev NAME]
+              [from addr IPADDR port PORT]
+              [to addr IPADDR port PORT]
+              [chacha] [persist]
 ```
 
-| Option          | Type     | Description                                                  |
-|-----------------|----------|--------------------------------------------------------------|
-| `IPADDR`        | positional | Local IP address to bind (IPv4 or IPv6). Default: `0.0.0.0` |
-| `PORT`          | positional | Local port to bind. Default: `5000`                          |
-| `to IPADDR`     | positional | Remote peer IP address (within the `to` sub-option)          |
-| `to PORT`       | positional | Remote peer port (within the `to` sub-option). Default: same as bind port |
-| `dev NAME`      | string   | Name of the tunnel device to create/use                      |
-| `keyfile FILE`  | string   | **Required.** Path to the secret key file                    |
-| `chacha`        | flag     | Force ChaCha20-Poly1305 cipher instead of AEGIS-256          |
-| `persist`       | flag     | Keep the tunnel device alive after the process exits         |
+| Option | Type | Description |
+|--------|------|-------------|
+| `keyfile FILE` | string | **Required.** Path to the secret key file (hex). |
+| `dev NAME` | string | Tunnel interface name to create or use. |
+| `from addr … port …` | nested | Local UDP bind address and port (IPv4 or IPv6). |
+| `to addr … port …` | nested | Remote peer address and port (client / outbound). |
+| `chacha` | flag | Force ChaCha20-Poly1305 instead of AEGIS-256 when available. |
+| `persist` | flag | Keep the tunnel device after the process exits. |
 
-The `IPADDR` and `PORT` values are **positional** — they are given as bare
-values without a preceding keyword. The local bind address/port appear directly
-after `bind`. The remote peer address/port follow the `to` keyword.
+Both `from` and `to` use a nested form: the keyword `from` or `to`, then
+`addr` and an IP address, then `port` and a port number. Omit `from` to use the
+defaults (IPv4 `0.0.0.0`, UDP port `5000`). Omit `to` for server mode (listen
+only).
 
-**Defaults:**
-- Bind address defaults to `0.0.0.0` (all interfaces), port `5000`.
-- If `to` is omitted, the tunnel runs in server mode (no outbound peer).
+**Defaults**
+
+- Local bind defaults to `0.0.0.0:5000` if `from` is omitted.
 - If AEGIS-256 is not available on the platform, ChaCha20-Poly1305 is used
-  automatically regardless of the `chacha` flag.
-- On `SIGHUP`, the tunnel device is set to persist before exiting (for graceful
+  automatically unless `chacha` forces the fallback.
+- On `SIGHUP`, persist mode is enabled on the device before exit (graceful
   reload).
 
-**Examples:**
+**Examples**
 
-Server (listen on all interfaces, port 5000):
+Server — listen on all interfaces, port 5000:
 
 ```sh
-glorytun bind keyfile /etc/glorytun/key persist
+glorytun bind keyfile /etc/glorytun/key dev tun0 persist
 ```
 
-Server (listen on a specific address and port):
+Server — listen on a specific address:
 
 ```sh
-glorytun bind 203.0.113.1 5000 keyfile /etc/glorytun/key persist
+glorytun bind keyfile /etc/glorytun/key dev tun0 persist \
+  from addr 203.0.113.1 port 5000
 ```
 
-Client (bind locally, connect to remote peer):
+Client — connect to a remote peer:
 
 ```sh
-glorytun bind 192.168.1.100 5000 to 203.0.113.1 5000 dev tun0 keyfile /etc/glorytun/key persist
+glorytun bind keyfile /etc/glorytun/key dev tun0 persist \
+  to addr 203.0.113.1 port 5000
 ```
 
 ---
@@ -85,291 +89,203 @@ glorytun bind 192.168.1.100 5000 to 203.0.113.1 5000 dev tun0 keyfile /etc/glory
 Show information about a running tunnel.
 
 ```
-glorytun show [dev NAME] [bad]
+glorytun show [dev NAME] [errors]
 ```
 
-| Option     | Type   | Description                                              |
-|------------|--------|----------------------------------------------------------|
-| `dev NAME` | string | Tunnel device name. Auto-detected if only one tunnel exists |
-| `bad`      | flag   | Show error counters instead of general status            |
+| Option     | Type | Description |
+|------------|------|-------------|
+| `dev NAME` | string | Tunnel device. If omitted and only one tunnel exists, it may be auto-selected (see `glorytun list`). |
+| `errors`   | flag | Show per-error counters instead of status. |
 
-**Without `bad`**, displays: tunnel name, server/client mode, PID, bind
-address and port, peer address and port (client only), MTU, and cipher.
+**Without `errors`**, prints: tunnel name, local and remote address.port, PID,
+MTU, and cipher (`aegis256` or `chacha20poly1305`).
 
-**With `bad`**, displays per-error-type counters: `decrypt`, `difftime`,
-and `keyx`, along with the last source address and port for each.
-
-Output is formatted as human-readable when stdout is a terminal, or as a
-single-line machine-readable format otherwise.
+**With `errors`**, prints counters for `decrypt`, `clocksync`, and `keyx`, each
+with last source address and port when present.
 
 ---
 
 ## `glorytun set`
 
-Change properties of a running tunnel.
+Change timing-related properties of a running tunnel.
 
 ```
-glorytun set [dev NAME] [tc CS|AF|EF] [kxtimeout SECONDS]
-             [timetolerance SECONDS] [keepalive SECONDS]
+glorytun set [dev NAME] [kxtimeout TIME] [timetolerance TIME] [keepalive TIME]
 ```
 
-| Option                   | Type   | Description                                    |
-|--------------------------|--------|------------------------------------------------|
-| `dev NAME`               | string | Tunnel device name                             |
-| `tc CS\|AF\|EF`         | DSCP   | Traffic class / DSCP marking for tunnel packets |
-| `kxtimeout SECONDS`     | time   | Key exchange (rotation) timeout                |
-| `timetolerance SECONDS` | time   | Clock synchronisation tolerance between peers  |
-| `keepalive SECONDS`     | time   | Keepalive interval                             |
+| Option | Type | Description |
+|--------|------|-------------|
+| `dev NAME` | string | Tunnel device. |
+| `kxtimeout TIME` | time | Key exchange (rotation) timeout. |
+| `timetolerance TIME` | time | Clock sync tolerance between peers. |
+| `keepalive TIME` | time | Keepalive interval. |
 
-### Traffic class values
-
-The `tc` option accepts DSCP class names:
-
-| Format   | Examples                      | Description               |
-|----------|-------------------------------|---------------------------|
-| `CS0`–`CS7` | `CS0`, `CS6`              | Class Selector            |
-| `AF`*xy* | `AF11`, `AF21`, `AF43`        | Assured Forwarding (class 1–4, drop 1–3) |
-| `EF`     | `EF`                          | Expedited Forwarding      |
-
-All time values accept [time suffixes](#time-suffixes). The default unit (no
-suffix) is seconds.
+All time values accept [time suffixes](#time-suffixes). Values are applied
+together in one control message; omitted options keep their previous values on
+the daemon side as implemented.
 
 ---
 
 ## `glorytun path`
 
-Manage network paths for a running tunnel. A tunnel can have multiple paths
-(multipath) between local and remote addresses.
+Manage paths on a running tunnel (multipath). You must select a tunnel with
+`dev`, optionally narrow the path with `addr` (local IP) and `to` (remote), then
+either **show** status or **set** configuration.
 
-When only a filter is given (or no arguments), path status is displayed.
-When state or configuration options are given, the specified path is modified.
-
-```
-glorytun path [IPADDR] [dev NAME] [up|backup|down]
-              [rate [fixed|auto] [tx BYTES/SEC] [rx BYTES/SEC]]
-              [beat SECONDS] [losslimit PERCENT]
-```
-
-| Option              | Type       | Description                                           |
-|---------------------|------------|-------------------------------------------------------|
-| `IPADDR`            | positional | Select/identify path by its local IP address          |
-| `dev NAME`          | string     | Select tunnel device                                  |
-| `up\|backup\|down`  | choice     | Set path state (mutually exclusive, one of the three) |
-| `rate`              | sub        | Rate limiting sub-options (see below)                 |
-| `beat SECONDS`      | time       | Internal heartbeat/probe interval. Accepts [time suffixes](#time-suffixes) |
-| `losslimit PERCENT` | percent    | Loss percentage threshold to disable the path (0–100). Accepts `%` suffix |
-
-The `IPADDR` value is **positional** — given as a bare IP address without a
-preceding keyword. It identifies which path to operate on by its local address.
-
-### Path states
-
-| State    | Description                                               |
-|----------|-----------------------------------------------------------|
-| `up`     | Path is active and carries traffic                        |
-| `backup` | Path is kept alive but only used if primary paths degrade |
-| `down`   | Path is disabled                                          |
-
-### `path rate`
+**View path status (default)**
 
 ```
-glorytun path IPADDR dev NAME rate [fixed|auto] [tx BYTES/SEC] [rx BYTES/SEC]
+glorytun path [dev NAME] [addr IP] [to addr IP port PORT]
+              [show [mtu|rtt|stat]]
 ```
 
-| Option        | Type   | Description                                                   |
-|---------------|--------|---------------------------------------------------------------|
-| `fixed\|auto` | choice | Fixed rate or dynamic rate detection (mutually exclusive)     |
-| `tx BYTES/SEC` | bytes | Maximum transmission rate. Accepts [size suffixes](#size-suffixes) |
-| `rx BYTES/SEC` | bytes | Maximum reception rate. Accepts [size suffixes](#size-suffixes)    |
+With no `set` keyword, the daemon returns path status. Optional `show` picks a
+view: `mtu` (MTU probe columns), `rtt` (RTT / RTT variance), `stat` (TX/RX rates
+and loss). Without `show`, a default wide status table is printed.
 
-With **`rate auto`**, `tx` / `rx` are still maximum (ceiling) values: the
-implementation probes and adjusts the path rate up to those limits. If a
-service script always passes a modest ceiling (e.g. ~100 Mbit), throughput
-will not grow beyond that even in auto mode.
+**Change path settings**
 
-### Displaying path status
+```
+glorytun path [dev NAME] [addr IP] [to addr IP port PORT] set
+              [up|down]
+              [rate [fixed|auto] [tx RATE] [rx RATE]]
+              [beat TIME] [pref N] [losslimit PERCENT]
+```
 
-When no state-changing options are given, `path` displays status for all paths
-(or for the path matching `IPADDR` if specified). Output includes: state,
-bind/public/peer addresses and ports, MTU, RTT, rate mode, loss limit, beat
-interval, and TX/RX statistics.
+| Option | Type | Description |
+|--------|------|-------------|
+| `dev NAME` | string | Tunnel device (**required** for path operations). |
+| `addr IP` | IPv4/IPv6 | Select path by local source address. |
+| `to addr … port …` | nested | Select path by remote address (optional filter). |
+| `set` | context | Introduces path configuration keywords below. |
+| `up` / `down` | choice | Enable or disable the path (mutually exclusive). |
+| `rate` | nested | `fixed` or `auto` (mutually exclusive), plus `tx` / `rx` caps ([size suffixes](#size-suffixes)). |
+| `beat TIME` | time | Internal heartbeat / probe interval. |
+| `pref N` | integer | Path preference (0–127); higher values bias scheduling. |
+| `losslimit PERCENT` | percent | Loss threshold to treat the path as too lossy (0–100; optional `%`). |
 
-**Examples:**
+The `path set` form is required to change state or rates. There is **no**
+separate `backup` keyword on the CLI; the daemon may still use internal backup
+semantics. To favour some paths over others, use different `pref` and `tx` /
+`rx` values.
 
-Show all paths:
+**Examples**
 
 ```sh
 glorytun path dev tun0
+glorytun path dev tun0 addr 192.168.1.100
+glorytun path dev tun0 show rtt
+glorytun path dev tun0 addr 192.168.1.100 set up beat 5s losslimit 30% \
+  rate fixed tx 12500k rx 12500k
+glorytun path dev tun0 addr 192.168.1.100 set down
 ```
 
-Show a specific path:
-
-```sh
-glorytun path 192.168.1.100 dev tun0
-```
-
-Bring a path up:
-
-```sh
-glorytun path 192.168.1.100 dev tun0 up beat 5s losslimit 30%
-```
-
-Set fixed rate limits on a path:
-
-```sh
-glorytun path 192.168.1.100 dev tun0 rate fixed tx 100Mbit rx 100Mbit
-```
-
-Disable a path:
-
-```sh
-glorytun path 192.168.1.100 dev tun0 down
-```
+With **`rate auto`**, `tx` and `rx` are ceilings: the implementation probes up to
+those limits.
 
 ---
 
 ## `glorytun bench`
 
-Run a cryptographic performance benchmark.
+Run a cryptographic throughput benchmark (min / mean / max Mbps over packet
+sizes).
 
 ```
-glorytun bench [aes|chacha]
+glorytun bench [fallback]
 ```
 
-| Option        | Type   | Description                                       |
-|---------------|--------|---------------------------------------------------|
-| `aes\|chacha` | choice | Select cipher to benchmark (mutually exclusive)   |
+| Option | Type | Description |
+|--------|------|-------------|
+| `fallback` | flag | Benchmark ChaCha20-Poly1305 instead of AEGIS-256. |
 
-If neither is specified and AEGIS-256 is available, it is benchmarked by
-default. If AEGIS-256 is not available, ChaCha20-Poly1305 is benchmarked
-automatically. Specifying `aes` on a platform without AEGIS-256 support
-produces an error.
-
-Outputs min/mean/max throughput in Mbps for various packet sizes (20–1450 bytes).
+If `fallback` is omitted and AEGIS-256 is available, it is benchmarked. If
+AEGIS-256 is not available, ChaCha20-Poly1305 is used.
 
 ---
 
 ## `glorytun keygen`
 
-Generate a new random 256-bit secret key and print it as a hexadecimal string.
-Takes no options.
+Print a new random 256-bit secret key as 64 hex characters. No options.
 
 ```
 glorytun keygen
 ```
 
-The output (64 hex characters) can be saved to a file for use with `bind keyfile`.
+---
+
+## `glorytun list`
+
+Print paths to control sockets for running tunnels (one line per socket), for
+use with `show` / `set` / `path`.
+
+```
+glorytun list
+```
 
 ---
 
 ## `glorytun version`
 
-Print the Glorytun version, or the linked libsodium version.
+Print the program version and linked libsodium version.
 
 ```
-glorytun version [libsodium]
+glorytun version
 ```
-
-| Option      | Type | Description                            |
-|-------------|------|----------------------------------------|
-| `libsodium` | flag | Print the libsodium version instead    |
 
 ---
 
 ## Value Types
 
-### Positional arguments
-
-Some options have no keyword name — their values are given directly as bare
-arguments. In the argz table these have `name = NULL` and are identified by
-their type (e.g. `IPADDR`, `PORT`). If a bare value does not match the
-expected type, argz reports an error like:
-
-```
-error: `badvalue' is not a valid IPADDR for bind
-```
-
 ### Time suffixes
 
-Options that accept time values (marked `SECONDS` in usage) support the
-following suffixes:
+Options that take time support:
 
-| Suffix | Unit         | Equivalent          |
-|--------|--------------|---------------------|
-| `ms`   | milliseconds | 1 ms                |
-| `s`    | seconds      | 1,000 ms            |
-| `m`    | minutes      | 60,000 ms           |
-| `h`    | hours        | 3,600,000 ms        |
-| `d`    | days         | 86,400,000 ms       |
-| `w`    | weeks        | 604,800,000 ms      |
-
-If no suffix is given, the value is interpreted as **seconds** (multiplied by
-1000 internally to milliseconds).
+| Suffix | Meaning |
+|--------|---------|
+| `ms` | milliseconds |
+| *(none)*, `s` | seconds (value scaled to milliseconds internally) |
+| `m` | minutes |
+| `h` | hours |
+| `d` | days |
+| `w` | weeks |
 
 ### Size suffixes
 
-Options that accept size values (marked `BYTES/SEC` in usage) support SI and
-binary prefixes combined with byte/bit units:
-
-**Prefixes:**
-
-| Prefix     | SI (×1000)      | Binary (×1024)          |
-|------------|-----------------|-------------------------|
-| `k` or `K` | 1,000           | 1,024 (with `i`)       |
-| `m` or `M` | 1,000,000       | 1,048,576 (with `i`)   |
-| `g` or `G` | 1,000,000,000   | 1,073,741,824 (with `i`) |
-
-**Units:**
-
-| Unit                        | Meaning                        |
-|-----------------------------|--------------------------------|
-| `B`, `byte`, `bytes`        | bytes                          |
-| `b`, `bit`, `bits`          | bits (value divided by 8)      |
-| *(no unit after prefix)*    | bytes                          |
-
-**Examples:** `100Mbit` = 100 megabits, `1GiB` = 1 gibibyte, `500k` = 500,000 bytes.
+Rate and size options accept SI/binary prefixes and `bit` / `byte` units; see
+the argz helpers in the build. Examples: `100Mbit`, `12500k`, `1GiB`.
 
 ### Percent suffix
 
-The `losslimit` option accepts a `%` suffix (e.g. `50%`). The suffix is
-optional; the raw integer (0–100) is also accepted.
+`losslimit` accepts an optional `%` suffix (e.g. `30%`) or a raw 0–100 value.
 
 ### Pipe-separated choices
 
-Options written as `a|b|c` in this documentation (e.g. `up|backup|down`,
-`aes|chacha`, `fixed|auto`) accept exactly one of the listed keywords.
-Specifying more than one produces an error.
+Where this document lists `a|b` (e.g. `fixed|auto`, `up|down`), only one of the
+group may be set; duplicates produce an error.
 
 ---
 
 ## Help
 
-The keyword `help` can be used after any command to display its usage line:
-
 ```sh
 glorytun bind help
 glorytun path help
 glorytun set help
+glorytun show help
 glorytun bench help
+glorytun list help
 glorytun version help
+glorytun keygen help
 ```
 
 ---
 
-## Option Parsing Rules
+## Option parsing rules
 
-Glorytun uses the argz library which follows these conventions:
-
-- **Named options** (e.g. `dev NAME`, `keyfile FILE`) match a keyword followed
-  by a value.
-- **Positional arguments** (e.g. bare `IPADDR`, `PORT`) are matched by type
-  against the next argument without any keyword prefix.
-- **Flag options** (e.g. `chacha`, `persist`, `bad`) are set by their mere
-  presence with no following value.
-- **Choice options** (e.g. `up|backup|down`) accept exactly one of the listed
-  alternatives. Setting two from the same choice produces an "already set" error.
-- **Nested sub-options** (e.g. `to`, `rate`) introduce a nested option context
-  that consumes subsequent arguments.
-- **Unknown options** cause an error and usage display.
-- **Order is flexible** — named options can appear in any order, but positional
-  arguments are consumed in declaration order.
+- **Named options** (`dev`, `keyfile`, `addr`, …) are keywords followed by
+  values where required.
+- **Flags** (`persist`, `chacha`, `fallback`, `errors`) need no value.
+- **Nested groups** (`from` / `to` with `addr` and `port`; `path` … `set` with
+  `rate`, `up`, …) consume following tokens until the group is complete.
+- **Order** of top-level keywords is generally flexible; use `help` on each
+  command to see the exact usage string the binary expects.

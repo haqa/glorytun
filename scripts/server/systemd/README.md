@@ -102,7 +102,8 @@ systemctl disable glorytun-server@tun0
   restart, and inspect logs for each tunnel individually.
 - The service automatically restarts on failure after a 5-second delay.
 - The helper script reads `/etc/default/glorytun-server`, finds the matching
-  tunnel entry, resolves the IP from the named interface, and execs glorytun.
+  tunnel entry, resolves the IP from the named interface, and runs
+  `glorytun bind from addr … port … dev … keyfile …`.
 - The IP address is resolved from the named interface at startup. If the
   interface has no IPv4 address, the service fails with an error visible in
   `journalctl`.

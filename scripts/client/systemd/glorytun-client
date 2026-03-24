@@ -53,7 +53,7 @@ BEAT="500ms"
 # Packet loss percentage at which a path is considered degraded
 LOSSLIMIT="30%"
 
-# Initial path state: "up" or "backup"
+# Initial path state for `glorytun path … set`: "up" or "down"
 PATH_STATE="up"
 
 # ── Routing ──────────────────────────────────────────────────────────────

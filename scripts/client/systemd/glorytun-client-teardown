@@ -28,7 +28,7 @@ for spec in $INTERFACES; do
     src_ip=$(get_iface_ip "$iface")
 
     if [ -n "$src_ip" ]; then
-        "$GLORYTUN_BIN" path "$src_ip" dev "$TUN_DEV" down 2>/dev/null || true
+        "$GLORYTUN_BIN" path dev "$TUN_DEV" addr "$src_ip" set down 2>/dev/null || true
         ip rule del from "$src_ip" table "$table" 2>/dev/null || true
         ip route flush table "$table" 2>/dev/null || true
     fi

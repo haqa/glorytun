@@ -65,7 +65,7 @@ start_tunnel() {
     start-stop-daemon --start --background \
         --make-pidfile --pidfile "$PIDDIR/$TUN_NAME.pid" \
         --exec "$GLORYTUN_BIN" -- \
-        bind "$bind_ip" "$TUN_PORT" dev "$TUN_NAME" \
+        bind from addr "$bind_ip" port "$TUN_PORT" dev "$TUN_NAME" \
         keyfile "$TUN_KEYFILE" $GLORYTUN_OPTS
     eend $? || return 1
 

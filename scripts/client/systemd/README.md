@@ -63,7 +63,7 @@ INTERFACES="eth1:192.168.1.254 eth2:10.0.0.1 eth3:172.16.0.1 eth4:10.1.0.1"
 | `RATE_AUTO_RX_MAX` | `12500000k` | Ceiling when `RATE_MODE=auto` and `RATE_RX` is unset/empty. |
 | `BEAT` | `5s` | Keepalive beat interval |
 | `LOSSLIMIT` | `30%` | Loss percentage threshold for path degradation |
-| `PATH_STATE` | `up` | Initial state: `up` or `backup` |
+| `PATH_STATE` | `up` | Passed to `glorytun path … set` (`up` or `down`) |
 
 Commenting out `RATE_TX`/`RATE_RX` does not remove limits: the start script uses `${VAR:-default}`. Use `auto` with unset rates (or raise `RATE_TX`/`RATE_RX`) so mobile links are not stuck at ~100 Mbit.
 
@@ -118,7 +118,7 @@ systemctl disable glorytun-client
 ### glorytun-client-start (ExecStart)
 
 1. Sources `/etc/default/glorytun-client`.
-2. Starts `glorytun bind to <server> <port> ...` in the background.
+2. Starts `glorytun bind to addr <server> port <port> ...` in the background.
 3. Waits for the TUN device to appear (up to 5 seconds).
 4. Assigns `TUN_LOCAL_IP` to the TUN device and brings it up.
 5. Sets `rp_filter` to loose mode on all interfaces.
@@ -132,7 +132,7 @@ systemctl disable glorytun-client
 
 Runs after the service stops (including on failure/restart):
 
-1. Brings each path down via `glorytun path ... down`.
+1. Brings each path down via `glorytun path dev … addr … set down`.
 2. Removes source-based policy rules and flushes routing tables.
 
 This ensures policy routes don't linger if the service crashes.

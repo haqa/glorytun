@@ -55,7 +55,7 @@ INTERFACES="eth1:192.168.1.254 eth2:10.0.0.1 eth3:172.16.0.1 eth4:10.1.0.1"
 | `RATE_AUTO_RX_MAX` | `12500000k` | When `RATE_MODE=auto` and `RATE_RX` is unset/empty, use this ceiling. |
 | `BEAT` | `5s` | Keepalive beat interval |
 | `LOSSLIMIT` | `30%` | Loss percentage threshold for path degradation |
-| `PATH_STATE` | `up` | Initial state: `up` or `backup` |
+| `PATH_STATE` | `up` | Passed to `glorytun path … set` (`up` or `down`) |
 
 The init script always passes explicit `tx`/`rx` to `glorytun path`. Commenting out `RATE_TX`/`RATE_RX` in the config does **not** omit them — `${VAR:-default}` still applies. Under `fixed`, the default stays ~100 Mbit; under `auto`, the default ceiling is much higher so variable links (e.g. LTE) are not capped at ~100 Mbit unless you set a lower `RATE_TX`/`RATE_RX`.
 
@@ -106,7 +106,7 @@ rc-update del glorytun-client default
 
 On **start**, in order:
 
-1. Starts `glorytun bind to <server> <port> ...` in the background.
+1. Starts `glorytun bind to addr <server> port <port> ...` in the background.
 2. Waits for the TUN device to appear (up to 5 seconds).
 3. Assigns `TUN_LOCAL_IP` to the TUN device and brings it up.
 4. Sets `rp_filter` to loose mode on all interfaces.
@@ -117,7 +117,7 @@ On **start**, in order:
 
 On **stop**, in reverse:
 
-1. Brings each path down via `glorytun path ... down`.
+1. Brings each path down via `glorytun path dev … addr … set down`.
 2. Removes the source-based policy routes and flushes routing tables.
 3. Stops the glorytun process.
 

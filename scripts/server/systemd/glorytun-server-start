@@ -78,7 +78,7 @@ wait_for_dev() {
 }
 
 # Start glorytun in background
-"$GLORYTUN_BIN" bind "$bind_ip" "$port" dev "$TUNNEL_NAME" \
+"$GLORYTUN_BIN" bind from addr "$bind_ip" port "$port" dev "$TUNNEL_NAME" \
     keyfile "$keyfile" $GLORYTUN_OPTS &
 GT_PID=$!
 

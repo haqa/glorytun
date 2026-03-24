@@ -58,10 +58,10 @@ Because of this coupling, “reweight by measured throughput” without a separa
 
 - Optional `uint64_t sched_total_cap` or reuse `sum(tx_max_rate)` for window math — see §2.4.
 
-**Control / CLI (`src/ctl.h`, `src/path.c`, `COMMAND-LINE.md`):**
+**Control / CLI (`src/ctl.h`, `src/path.c`, [COMMAND-LINE.md](COMMAND-LINE.md)):**
 
-- Optional: read-only or tunable `sched_weight` in `glorytun path` output.
-- Optional: new path sub-options, e.g. `weight min …`, `weight mode perf|fixed`, or global `set` knob — only if product needs runtime tuning without recompile.
+- Today’s user-facing `path` syntax is `glorytun path … [show …|set …]` with `addr`, optional `to`, `set up|down`, `rate fixed|auto`, `tx`/`rx`, `beat`, `pref`, `losslimit` — see the reference doc and `glorytun path help`.
+- Optional future work: read-only or tunable `sched_weight` in `glorytun path` output; new sub-options (e.g. `weight min …`, `weight mode perf|fixed`) or a global `set` knob — only if product needs runtime tuning without recompile.
 
 ### 2.3 Algorithm: updating `sched_weight`
 
@@ -126,7 +126,7 @@ Audit every assignment to `path->tx.rate` after this split.
 ### 2.8 Status and documentation
 
 - `gt_path_print_status()` (`src/path.c`): print `sched_weight` (and optionally keep showing `tx.rate` as “estimate” if retained).
-- Update `COMMAND-LINE.md`, `MULTIPATH-EXAMPLE.md`, and client scripts README if new knobs appear.
+- When new knobs land, update [COMMAND-LINE.md](COMMAND-LINE.md), [MULTIPATH-EXAMPLE.md](MULTIPATH-EXAMPLE.md), and the `scripts/**/README.md` files accordingly.
 
 ### 2.9 Testing strategy
 

@@ -62,8 +62,7 @@ register_path() {
         eff_rx="${RATE_RX:-12500k}"
     fi
 
-    "$GLORYTUN_BIN" path "$src_ip" dev "$TUN_DEV" \
-        "${PATH_STATE:-up}" \
+    "$GLORYTUN_BIN" path dev "$TUN_DEV" addr "$src_ip" set "${PATH_STATE:-up}" \
         beat "${BEAT:-5s}" \
         losslimit "${LOSSLIMIT:-30%}" \
         rate "$mode" tx "$eff_tx" rx "$eff_rx"
@@ -71,7 +70,7 @@ register_path() {
 
 deregister_path() {
     local src_ip="$1"
-    "$GLORYTUN_BIN" path "$src_ip" dev "$TUN_DEV" down 2>/dev/null
+    "$GLORYTUN_BIN" path dev "$TUN_DEV" addr "$src_ip" set down 2>/dev/null
 }
 
 start() {
@@ -97,7 +96,7 @@ start() {
     start-stop-daemon --start --background \
         --make-pidfile --pidfile "$PIDDIR/${TUN_DEV}.pid" \
         --exec "$GLORYTUN_BIN" \
-        bind to "$SERVER_ADDR" "$SERVER_PORT" dev "$TUN_DEV" \
+        bind to addr "$SERVER_ADDR" port "$SERVER_PORT" dev "$TUN_DEV" \
         keyfile "$KEYFILE" $GLORYTUN_OPTS
     eend $? || return 1
 

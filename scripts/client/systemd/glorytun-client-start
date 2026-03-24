@@ -60,7 +60,7 @@ wait_for_dev() {
 
 # ── Start tunnel in background ────────────────────────────────────────────
 
-"$GLORYTUN_BIN" bind to "$SERVER_ADDR" "$SERVER_PORT" \
+"$GLORYTUN_BIN" bind to addr "$SERVER_ADDR" port "$SERVER_PORT" \
     dev "$TUN_DEV" keyfile "$KEYFILE" $GLORYTUN_OPTS &
 GT_PID=$!
 
@@ -117,8 +117,7 @@ for spec in $INTERFACES; do
 
     # Register path — rate_tx/rate_rx computed once before the loop; see
     # scripts/client/openrc/glorytun-client register_path() for semantics.
-    "$GLORYTUN_BIN" path "$src_ip" dev "$TUN_DEV" \
-        "${PATH_STATE:-up}" \
+    "$GLORYTUN_BIN" path dev "$TUN_DEV" addr "$src_ip" set "${PATH_STATE:-up}" \
         beat "${BEAT:-5s}" \
         losslimit "${LOSSLIMIT:-30%}" \
         rate "$rate_mode" tx "$rate_tx" rx "$rate_rx"
