@@ -42,5 +42,4 @@ EXTRA_DIST = \
     mud/LICENSE \
     mud/README.md \
     sodium.sh \
-    systemd \
     version.sh
