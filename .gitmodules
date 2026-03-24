@@ -1,6 +1,6 @@
 [submodule "mud"]
 	path = mud
-	url = https://github.com/angt/mud.git
+	url = git@github.com:haqa/mud.git
 	ignore = dirty
 [submodule "argz"]
 	path = argz
