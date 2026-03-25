@@ -6,13 +6,27 @@ jobs:
   build:
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, macOS-latest]
+        include:
+          - os: ubuntu-latest
+            install: |
+              sudo apt-get update
+              sudo apt-get install -y meson ninja-build pkg-config libsodium-dev
+          - os: macos-latest
+            install: |
+              brew install meson ninja libsodium pkg-config
 
     steps:
-    - uses: actions/checkout@v2
-    - name: Build glorytun
-      run: |
-          git submodule update --init --recursive
-          ./sodium.sh
-          make
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Install dependencies
+        run: ${{ matrix.install }}
+
+      - name: Meson build
+        run: |
+          meson setup build --buildtype=release -Dstatic=false
+          meson compile -C build

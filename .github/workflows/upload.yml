@@ -1,29 +1,134 @@
-name: Upload
+# Tag releases: source tarball (autotools distcheck) + static Meson binaries + publish.
+name: Release
 
 on:
   push:
-    tags:
-    - "v*"
+    tags: ['v*']
+
+permissions:
+  contents: write
 
 jobs:
-  build:
+  source-tarball:
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libtool pkg-config libsodium-dev
+
+      - name: distcheck
+        run: |
+          ./autogen.sh
+          ./configure --disable-dependency-tracking
+          make distcheck
+
+      - name: Upload source tarball artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-tarball
+          path: glorytun-*.tar.gz
+
+  linux-binaries:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: linux-x86_64-glibc-static
+            experimental: false
+          - id: linux-x86_64-musl-static
+            experimental: false
+          - id: linux-x86-musl-static
+            experimental: false
+          - id: linux-aarch64-musl-static
+            experimental: false
+          - id: linux-armv7-musl-static
+            experimental: false
+          - id: linux-mips-musl-static
+            experimental: true
+          - id: linux-mipsel-musl-static
+            experimental: true
+          - id: linux-mips64-musl-static
+            experimental: true
+          - id: linux-mips64el-musl-static
+            experimental: true
 
     steps:
-    - name: Install libsodium-dev
-      run: |
-        sudo apt-get install libsodium-dev
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
 
-    - uses: actions/checkout@v2
-    - name: Run distcheck
-      run: |
-        git submodule update --init --recursive
-        ./autogen.sh
-        ./configure --disable-dependency-tracking
-        make distcheck
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential meson ninja-build pkg-config curl file git
 
-    - name: Upload dist
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        gh release upload v$(cat VERSION) $(echo glorytun-*.tar.gz)
+      - name: Install Zig (musl cross targets)
+        if: ${{ matrix.id != 'linux-x86_64-glibc-static' }}
+        uses: ziglang/setup-zig@v2
+        with:
+          version: 0.13.0
+
+      - name: Build static binary
+        id: build
+        continue-on-error: ${{ matrix.experimental }}
+        run: |
+          chmod +x scripts/ci/build-static-binary.sh
+          scripts/ci/build-static-binary.sh "${{ matrix.id }}"
+
+      - name: Upload binary artifact
+        if: steps.build.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.id }}
+          path: glorytun-*-${{ matrix.id }}
+          if-no-files-found: error
+
+  macos-binary:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Build (darwin-arm64, libsodium static; links dynamically to system libs)
+        run: |
+          chmod +x scripts/ci/build-static-binary.sh
+          scripts/ci/build-static-binary.sh darwin-arm64
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-darwin-arm64
+          path: glorytun-*-darwin-arm64
+          if-no-files-found: error
+
+  publish:
+    runs-on: ubuntu-latest
+    needs: [source-tarball, linux-binaries, macos-binary]
+    steps:
+      - name: Download release assets
+        uses: actions/download-artifact@v4
+        with:
+          pattern: '*'
+          merge-multiple: true
+          path: release-assets
+
+      - name: Create GitHub release and upload files
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            release-assets/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

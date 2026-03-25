@@ -1,0 +1,2 @@
+option('static', type: 'boolean', value: false,
+  description: 'Link libsodium statically; on Linux also pass -static for a fully static executable (musl or glibc).')

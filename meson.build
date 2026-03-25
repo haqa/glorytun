@@ -10,6 +10,14 @@ project('glorytun', 'c',
 add_global_arguments('-DPACKAGE_VERSION="'+meson.project_version()+'"', language : 'c')
 add_global_arguments('-DPACKAGE_NAME="'+meson.project_name()+'"', language : 'c')
 
+static_link = get_option('static')
+libsodium_dep = dependency('libsodium', version : '>=1.0.4', static: static_link)
+
+exe_link_args = []
+if static_link and host_machine.system() == 'linux'
+  exe_link_args += ['-static']
+endif
+
 executable('glorytun', install: true,
   sources: [
     'argz/argz.c',
@@ -30,9 +38,8 @@ executable('glorytun', install: true,
     'src/tun.c',
     'src/version.c',
   ],
-  dependencies: [
-    dependency('libsodium', version : '>=1.0.4'),
-  ]
+  dependencies: [libsodium_dep],
+  link_args: exe_link_args,
 )
 
 # Systemd units and network snippets live under scripts/{client,server}/systemd/

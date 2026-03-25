@@ -39,7 +39,24 @@ EXTRA_DIST = \
     VERSION \
     autogen.sh \
     meson.build \
+    meson_options.txt \
     mud/LICENSE \
     mud/README.md \
     sodium.sh \
+    scripts/ci/build-static-binary.sh \
+    scripts/client/openrc/README.md \
+    scripts/client/openrc/glorytun-client \
+    scripts/client/openrc/glorytun-client.conf \
+    scripts/client/systemd/README.md \
+    scripts/client/systemd/glorytun-client \
+    scripts/client/systemd/glorytun-client-start \
+    scripts/client/systemd/glorytun-client-teardown \
+    scripts/client/systemd/glorytun-client.service \
+    scripts/server/openrc/README.md \
+    scripts/server/openrc/glorytun-server \
+    scripts/server/openrc/glorytun-server.conf \
+    scripts/server/systemd/README.md \
+    scripts/server/systemd/glorytun-server \
+    scripts/server/systemd/glorytun-server-start \
+    scripts/server/systemd/glorytun-server@.service \
     version.sh
