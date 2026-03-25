@@ -13,7 +13,11 @@ build-aux
 .deps
 .dirstamp
 .sodium
+.ci-cache
+.zig-cache
 glorytun
 build*
 VERSION
 *~
+cross-linux-*
+*.tar.gz
