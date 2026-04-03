@@ -56,10 +56,12 @@ gt_path_conf(struct ctl_msg *res)
         return;
 
     printf("path dev %s addr %s to addr %s port %"PRIu16" "
-           "set %s pref %u beat %s losslimit %u%% rate %s tx %s rx %s\n",
+           "set %s pref %u beat %s miss %u losslimit %u%% rate %s tx %s rx %s\n",
             res->tun_name, local,
             remote, gt_get_port(&res->path.conf.remote),
             state, res->path.conf.pref, beat,
+            res->path.conf.heartbeat_miss_max
+                ? res->path.conf.heartbeat_miss_max : MUD_HEARTBEAT_MISS_DEFAULT,
             res->path.conf.loss_limit * 100U / 255U,
             res->path.conf.fixed_rate ? "fixed" : "auto",
             tx, rx);
@@ -212,6 +214,7 @@ gt_path(int argc, char **argv, void *data)
     struct argz_ull beat = {.suffix = argz_time_suffix};
     struct argz_ull pref = {.max = 0xFF >> 1};
     struct argz_ull loss = {.max = 100, .suffix = gt_argz_percent_suffix};
+    struct argz_ull miss = {.max = 255};
 
     struct argz setz[] = {
         {"up",        "Enable path",                .grp = 2},
@@ -220,6 +223,8 @@ gt_path(int argc, char **argv, void *data)
         {"beat",      "Internal beat rate", argz_ull,  &beat},
         {"pref",      "Path preference",    argz_ull,  &pref},
         {"losslimit", "Disable lossy path", argz_ull,  &loss},
+        {"miss",      "Max beats without reply before degraded (0=default 5)",
+         argz_ull, &miss},
         {0}};
 
     struct argz showz[] = {
@@ -266,6 +271,8 @@ gt_path(int argc, char **argv, void *data)
                 .pref        = argz_is_set(setz, "pref")
                              ? (pref.value << 1) | 1 : 0,
                 .loss_limit  = loss.value * 255 / 100,
+                .heartbeat_miss_max = argz_is_set(setz, "miss")
+                                      ? (unsigned char)miss.value : 0,
             },
         }, res = {0};
 

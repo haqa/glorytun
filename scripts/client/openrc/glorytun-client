@@ -62,9 +62,16 @@ register_path() {
         eff_rx="${RATE_RX:-12500k}"
     fi
 
+    if [ -n "${HEARTBEAT_MISS+x}" ] && [ -n "$HEARTBEAT_MISS" ]; then
+        miss_arg="miss $HEARTBEAT_MISS"
+    else
+        miss_arg=
+    fi
+
     "$GLORYTUN_BIN" path dev "$TUN_DEV" addr "$src_ip" set "${PATH_STATE:-up}" \
         beat "${BEAT:-5s}" \
         losslimit "${LOSSLIMIT:-30%}" \
+        ${miss_arg:+$miss_arg }\
         rate "$mode" tx "$eff_tx" rx "$eff_rx"
 }
 

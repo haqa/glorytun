@@ -55,6 +55,7 @@ INTERFACES="eth1:192.168.1.254 eth2:10.0.0.1 eth3:172.16.0.1 eth4:10.1.0.1"
 | `RATE_AUTO_RX_MAX` | `12500000k` | When `RATE_MODE=auto` and `RATE_RX` is unset/empty, use this ceiling. |
 | `BEAT` | `5s` | Keepalive beat interval |
 | `LOSSLIMIT` | `30%` | Loss percentage threshold for path degradation |
+| `HEARTBEAT_MISS` | *(unset)* | Optional. Passed as `miss N` on `glorytun path … set` (max beats without reply before degraded). Unset or empty uses the MUD default; `0` requests the default explicitly. Range 0–255 when set. |
 | `PATH_STATE` | `up` | Passed to `glorytun path … set` (`up` or `down`) |
 
 The init script always passes explicit `tx`/`rx` to `glorytun path`. Commenting out `RATE_TX`/`RATE_RX` in the config does **not** omit them — `${VAR:-default}` still applies. Under `fixed`, the default stays ~100 Mbit; under `auto`, the default ceiling is much higher so variable links (e.g. LTE) are not capped at ~100 Mbit unless you set a lower `RATE_TX`/`RATE_RX`.

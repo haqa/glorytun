@@ -63,6 +63,7 @@ INTERFACES="eth1:192.168.1.254 eth2:10.0.0.1 eth3:172.16.0.1 eth4:10.1.0.1"
 | `RATE_AUTO_RX_MAX` | `12500000k` | Ceiling when `RATE_MODE=auto` and `RATE_RX` is unset/empty. |
 | `BEAT` | `5s` | Keepalive beat interval |
 | `LOSSLIMIT` | `30%` | Loss percentage threshold for path degradation |
+| `HEARTBEAT_MISS` | *(unset)* | Optional. Passed as `miss N` on `glorytun path … set` (max beats without reply before degraded). Unset or empty uses the MUD default; `0` requests the default explicitly. Range 0–255 when set. |
 | `PATH_STATE` | `up` | Passed to `glorytun path … set` (`up` or `down`) |
 
 Commenting out `RATE_TX`/`RATE_RX` does not remove limits: the start script uses `${VAR:-default}`. Use `auto` with unset rates (or raise `RATE_TX`/`RATE_RX`) so mobile links are not stuck at ~100 Mbit.
@@ -125,7 +126,7 @@ systemctl disable glorytun-client
 6. For each interface in `INTERFACES`:
    - Resolves the interface's current IPv4 address.
    - Creates a source-based policy route via the specified gateway.
-   - Registers the path with glorytun (state, rate, beat, loss limit).
+   - Registers the path with glorytun (state, rate, beat, loss limit, optional `miss` from `HEARTBEAT_MISS`).
 7. Waits on the glorytun process (so systemd tracks the main PID).
 
 ### glorytun-client-teardown (ExecStopPost)

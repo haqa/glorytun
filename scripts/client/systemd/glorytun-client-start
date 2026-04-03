@@ -117,9 +117,16 @@ for spec in $INTERFACES; do
 
     # Register path — rate_tx/rate_rx computed once before the loop; see
     # scripts/client/openrc/glorytun-client register_path() for semantics.
+    if [ -n "${HEARTBEAT_MISS+x}" ] && [ -n "$HEARTBEAT_MISS" ]; then
+        miss_arg="miss $HEARTBEAT_MISS"
+    else
+        miss_arg=
+    fi
+
     "$GLORYTUN_BIN" path dev "$TUN_DEV" addr "$src_ip" set "${PATH_STATE:-up}" \
         beat "${BEAT:-5s}" \
         losslimit "${LOSSLIMIT:-30%}" \
+        ${miss_arg:+$miss_arg }\
         rate "$rate_mode" tx "$rate_tx" rx "$rate_rx"
     echo "Path registered: ${src_ip} on ${TUN_DEV}"
 

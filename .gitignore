@@ -21,3 +21,4 @@ VERSION
 *~
 cross-linux-*
 *.tar.gz
+.nfs*
