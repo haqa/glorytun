@@ -1,5 +1,5 @@
 project('glorytun', 'c',
-    version: run_command('./version.sh').stdout(),
+    version: run_command('./version.sh', check: false).stdout().strip(),
     license: 'BSD-3-Clause',
     default_options : [
       'buildtype=debugoptimized',

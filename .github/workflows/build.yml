@@ -1,6 +1,9 @@
 name: Build
 
-on: [push]
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
 
 jobs:
   build:
@@ -15,6 +18,7 @@ jobs:
               sudo apt-get install -y meson ninja-build pkg-config libsodium-dev
           - os: macos-latest
             install: |
+              brew update
               brew install meson ninja libsodium pkg-config
 
     steps:
